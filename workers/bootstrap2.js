@@ -2,7 +2,7 @@
     var factories = {};
     var modules = {};
 
-    function require(topId) {
+    global.require = function require(topId) {
         if (!modules[topId]) {
             if (!factories[topId]) throw new Error("require error: couldn't find \"" + topId + "\"");
             var path = topId + ".js"
@@ -14,6 +14,9 @@
             }
         }
         return modules[topId];
+    }
+    global.require.register = function(topId, factory) {
+        factories[topId] = factory;
     }
 
     var system = {
@@ -27,96 +30,14 @@
     // module for wrapping errors
     factories.error = function(require, exports, module, system, print) {
         exports.wrap = function(e, message, fileName, lineNumber) {
-            if (e.wrapped) return e;
-            fileName = fileName || e.fileName || e.filename || e.sourceURL;
+            fileName = decodeURIComponent(fileName || e.fileName || e.filename || e.sourceURL);
+            fileName = fileName.match(/(?:\@sourceURL(%20)*)([^*]+)/)[2];
             lineNumber = lineNumber || e.lineno || e.line || e.lineNumber;
-            message = message || e.message;
-            var name = e.name || "Error";
-            var stack;
-            try { // trying to fix exception line number in firefox
-                stack = e.stack.replace(/\/\S{1}commonjs>\S{1}\/[^<]*<commonjs\S\//g, "");
-                lineNumber = e.lineNumber - parseInt(stack.split("\n")[1].match(/\d+$/));
-            } catch(e) {}
-            return {
-                __proto__: e.__proto__,
-                name: name,
-                message: message,
-                // worker spec
-                filename: fileName,
-                // firefox
-                fileName: fileName,
-                // webkit
-                sourceURL: fileName,
-                // worker spec
-                lineno: lineNumber,
-                // webkit
-                line: lineNumber,
-                // firefox
-                lineNumber: lineNumber,
-                // firefox
-                stack: stack,
-                // wrapped flag
-                wrapped: true
-            };
-        };
-
-        
-            exports.getStackTrace = (function () {
-                var mode;
-                try {(0)()} catch (e) {
-                    mode = e.stack ? 'Firefox' : navigator.opera ? 'Opera' : 'Other';
-                }
-                switch (mode) {
-                    case 'Firefox' : return function () {
-                        try {(0)()} catch (e) {
-                            return e.stack.replace(/^.*?\n/,'').
-                                        replace(/(?:\n@:0)?\s+$/m,'').
-                                        replace(/^\(/gm,'{anonymous}(').
-                                        split("\n");
-                        }
-                    };
-                    case 'Opera' : return function () {
-                        try {(0)()} catch (e) {
-                            var lines = e.message.split("\n"),
-                                ANON = '{anonymous}',
-                                lineRE = /Line\s+(\d+).*?in\s+(http\S+)(?:.*?in\s+function\s+(\S+))?/i,
-                                i,j,len;
-                            for (i=4,j=0,len=lines.length; i<len; i+=2) {
-                                if (lineRE.test(lines[i])) {
-                                    lines[j++] = (RegExp.$3 ?
-                                        RegExp.$3 + '()@' + RegExp.$2 + RegExp.$1 :
-                                        ANON + RegExp.$2 + ':' + RegExp.$1) +
-                                        ' -- ' + lines[i+1].replace(/^\s+/,'');
-                                }
-                            }
-                            lines.splice(j,lines.length-j);
-                            return lines;
-                        }
-                    };
-                    default : return function () {
-                        var curr  = arguments.callee.caller,
-                            FUNC  = 'function', ANON = "{anonymous}",
-                            fnRE  = /function\s*([\w\-$]+)?\s*\(/i,
-                            stack = [],j=0,
-                            fn,args,i;
-                        while (curr) {
-                            fn    = fnRE.test(curr.toString()) ? RegExp.$1 || ANON : ANON;
-                            args  = stack.slice.call(curr.arguments);
-                            i     = args.length;
-                            while (i--) {
-                                switch (typeof args[i]) {
-                                    case 'string'  : args[i] = '"'+args[i].replace(/"/g,'\\"')+'"'; break;
-                                    case 'function': args[i] = FUNC; break;
-                                }
-                            }
-                            stack[j++] = fn + '(' + args.join() + ')';
-                            curr = curr.caller;
-                        }
-                        return stack;
-                    };
-                }
-            })();
-        
+            var e = e.stack ? e : {__proto__: e};
+            e.filename = e.fileName = e.sourceURL = fileName;
+            e.lineno = e.line = e.lineNumber = lineNumber;
+            return e;
+        }
     };
     // sandbox module
     factories.sandbox = function(require, exports, module, system, print) {
@@ -140,31 +61,21 @@
                 xhr.send(null);
                 if (xhr.status != 200 && xhr.status != 0) throw xhr.statusText;
                 return sources[topId] = [
-                    '/*commonjs>*/(function(require, exports, module, system, print) {',
-                        'try {/*<commonjs*/',
+                    '/*@sourceURL ', path, '*/',
+                    'require.register("', topId, '", function(require, exports, module, system, print) {',
                             xhr.responseText,
-                        '/*commonjs>*/} catch(e) {',
-                            'throw require("error").wrap(e, null, "', path, '");',
-                        '}',
-                    '})/*<commonjs*///@sourceURL ', path
+                    '})'
                 ].join("");
             };
-            loader.evaluate = function (text, topId) {
-                var fileName = loader.find(topId);
-                try {
-                    var factory = (system.evaluate || eval)(text, fileName, 1);
-                } catch (e) {
-                    throw require("error").wrap(e, null, fileName);
-                }
-                factory.path = fileName;
-                return factory;
+            loader.evaluate = function (text) {
+                importScripts('data:text/javascript,' + encodeURIComponent(text));
             };
             loader.load = function (topId) {
                 if (!Object.prototype.hasOwnProperty.call(factories, topId)) loader.reload(topId);
                 return factories[topId];
             };
             loader.reload = function (topId, path) {
-                factories[topId] = loader.evaluate(loader.fetch(topId, path), topId);
+                loader.evaluate(loader.fetch(topId, path), topId);
             };
             loader.paths = paths;
             loader.extensions = extensions;
@@ -223,11 +134,7 @@
                         'id': id,
                         'path': factory.path
                     };
-                    try {
-                        factory(require, exports, module, subsystem, subprint);
-                    } catch (e) {
-                        throw require("error").wrap(e, null, module.path);
-                    }
+                    factory(require, exports, module, subsystem, subprint);
                     if (sandbox.debug) {
                         // check for new globals
                         for (var name in global)
@@ -334,15 +241,19 @@
 
     // TODO do proper stuff
     global.onmessage = function onmessage(e) {
-        var message = eval(e.data);
-        if (message.main) {
-            require("sandbox").sandbox(message.main, system, {
-                modules: modules,
-                debug: message.debug,
-                loader: require("sandbox").Loader({
-                    factories: factories
-                })
-            });
+        try {
+            var message = eval(e.data);
+            if (message.main) {
+                require("sandbox").sandbox(message.main, system, {
+                    modules: modules,
+                    debug: message.debug,
+                    loader: require("sandbox").Loader({
+                        factories: factories
+                    })
+                });
+            }
+        } catch(e) {
+            throw require("error").wrap(e);
         }
     }
 })(this, function() { return eval(arguments[0]); })
