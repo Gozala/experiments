@@ -1,17 +1,22 @@
-(function(global, evalGlobal) {
+(function(global) {
+    var root;
+    try { // hack to get standard location property that is not implemented in firefox
+        root = global.location.toString().split("/");
+    } catch(e) {
+        root = e.fileName.split("/");
+    }
+    root.pop();
+    root = root.join("/");
+
     var factories = {};
     var modules = {};
 
     global.require = function require(topId) {
         if (!modules[topId]) {
             if (!factories[topId]) throw new Error("require error: couldn't find \"" + topId + "\"");
-            var path = topId + ".js"
+            var path = [root,topId].join("/") + ".js"
             var exports = modules[topId] = {};
-            try {
-                factories[topId](require, exports, {id: topId, path: path}, system, system.print);
-            } catch (e) {
-                throw require("error").wrap(e, null, path);
-            }
+            factories[topId](require, exports, {id: topId, path: path}, system, system.print);
         }
         return modules[topId];
     }
@@ -22,7 +27,10 @@
     var system = {
         print: function() {
             if (typeof console != "undefined") console.log(Array.prototype.join.call(arguments, " "));
-            postMessage(Array.prototype.join.call(arguments, " "))
+            postMessage(['({',
+                'method: "print",',
+                'args: "', Array.prototype.join.call(arguments, " "), '"',
+            '})'].join(""));
         },
         engine: "browser",
         engines: ["browser"]
@@ -51,7 +59,7 @@
             var debug = options.debug;
             loader.resolve = exports.resolve;
             loader.find = function (topId) {
-                return topId + extensions[0];
+                return [root, topId].join("/") + extensions[0];
             };
             loader.fetch = function (topId) {
                 if (sources[topId]) return sources[topId];
@@ -72,7 +80,9 @@
             };
             loader.load = function (topId) {
                 if (!Object.prototype.hasOwnProperty.call(factories, topId)) loader.reload(topId);
-                return factories[topId];
+                var factory = factories[topId];
+                factory.path = loader.find(topId);
+                return factory;
             };
             loader.reload = function (topId, path) {
                 loader.evaluate(loader.fetch(topId, path), topId);
@@ -83,7 +93,7 @@
         };
         exports.Sandbox = function (options) {
             options = options || {};
-            var loader = options.loader;
+            var loader = options.loader || exports.Loader(options);
             var subsystem = options.system || system || {};
             var sources = options.sources || {};
             var modules = options.modules || {};
@@ -185,18 +195,12 @@
             self.resolve = function (id, baseId) {
                 return loader.resolve(id, baseId);
             };
-            /**** evaluate
-            */
             self.evaluate = function (text, topId) {
                 return loader.evaluate(text, prefix + topId);
             };
-            /**** fetch
-            */
             self.fetch = function (topId) {
                 return loader.fetch(prefix + topId);
             };
-            /**** load
-            */
             self.load = function (topId) {
                 return loader.load(prefix + topId);
             };
@@ -226,35 +230,33 @@
             return sandbox.main(main);
         };
         exports.resolve = function (id, baseId) {
-                var topId = (baseId || "").split("/");
-                topId.pop();
-                var parts = id.split("/");
-                var part;
-                while (part = parts.shift()) {
-                    if (part == ".") continue;
-                    if (part == "..") topId.pop();
-                    else topId.push(part)
-                }
-                return topId.join("/");
+            var topId = (baseId || "").split("/");
+            topId.pop();
+            var parts = id.split("/");
+            var part;
+            while (part = parts.shift()) {
+                if (part == ".") continue;
+                if (part == "..") topId.pop();
+                else topId.push(part)
+            }
+            return topId.join("/");
         };
     };
-
-    // TODO do proper stuff
-    global.onmessage = function onmessage(e) {
+    global.onmessage = function onmessage(event) {
         try {
-            var message = eval(e.data);
-            if (message.main) {
-                require("sandbox").sandbox(message.main, system, {
-                    modules: modules,
-                    debug: message.debug,
-                    loader: require("sandbox").Loader({
-                        factories: factories
-                    })
-                });
+            var data = eval(event.data);
+            var options = data[0]
+            options.factories = options.factories || factories;
+            options.system.print = system.print;
+            require("sandbox").Sandbox(options).main(data[1]);
+        } catch(error) {
+            try {
+                var e = require("error").wrap(error);
+            } catch(e) {
+                throw error;
             }
-        } catch(e) {
-            throw require("error").wrap(e);
+            throw e;
         }
     }
-})(this, function() { return eval(arguments[0]); })
+})(this)
 
