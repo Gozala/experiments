@@ -1,1 +1,1 @@
-Sandbox({debug: true})("plugin");
+var sandbox = Sandbox({debug: true}).main("plugin");

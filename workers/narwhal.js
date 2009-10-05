@@ -1,20 +1,14 @@
 (function(global) {
-    var root;
-    try { // hack to get standard location property that is not implemented in firefox
-        root = global.location.toString().split("/");
-    } catch(e) {
-        root = e.fileName.split("/");
-    }
-    root.pop();
-    root = root.join("/");
-
     var factories = {};
     var modules = {};
+    function print(message) {
+        postMessage(message)
+    }
 
     global.require = function require(topId) {
         if (!modules[topId]) {
             if (!factories[topId]) throw new Error("require error: couldn't find \"" + topId + "\"");
-            var path = [root,topId].join("/") + ".js"
+            var path = [system.prefix, topId].join("") + ".js"
             var exports = modules[topId] = {};
             factories[topId](require, exports, {id: topId, path: path}, system, system.print);
         }
@@ -23,18 +17,6 @@
     global.require.register = function(topId, factory) {
         factories[topId] = factory;
     }
-
-    var system = {
-        print: function() {
-            if (typeof console != "undefined") console.log(Array.prototype.join.call(arguments, " "));
-            postMessage(['({',
-                'method: "print",',
-                'args: "', Array.prototype.join.call(arguments, " "), '"',
-            '})'].join(""));
-        },
-        engine: "browser",
-        engines: ["browser"]
-    };
     // module for wrapping errors
     factories.error = function(require, exports, module, system, print) {
         exports.wrap = function(e, message, fileName, lineNumber) {
@@ -59,7 +41,7 @@
             var debug = options.debug;
             loader.resolve = exports.resolve;
             loader.find = function (topId) {
-                return [root, topId].join("/") + extensions[0];
+                return [system.prefix, topId].join("") + extensions[0];
             };
             loader.fetch = function (topId) {
                 if (sources[topId]) return sources[topId];
@@ -242,13 +224,20 @@
             return topId.join("/");
         };
     };
+
+    var sandbox;
     global.onmessage = function onmessage(event) {
         try {
-            var data = eval(event.data);
-            var options = data[0]
-            options.factories = options.factories || factories;
-            options.system.print = system.print;
-            require("sandbox").Sandbox(options).main(data[1]);
+            var options = eval("(" + event.data + ")");
+            if (!sandbox) {
+                global.system = options.system;
+                system.print = print;
+                options.factories = factories;
+                sandbox = require("sandbox").Sandbox(options);
+            }
+            if (options.main) sandbox = sandbox.main(options.main);
+            if (options.program) sandbox = sandbox.program(options.main);
+            if (options.force) sandbox = sandbox.force(options.force);
         } catch(error) {
             try {
                 var e = require("error").wrap(error);
