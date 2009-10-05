@@ -1,1 +1,4 @@
-var sandbox = Sandbox({debug: true}).main("plugin");
+var sandbox = Sandbox({
+    prefix: "lib/",
+    debug: true
+}).main("app");
