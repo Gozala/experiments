@@ -3,12 +3,14 @@ This example demonstrates loading a set of CommonJS with asynchronous
 XMLHttpRequests.
 
 The advantages of this approach include:
+
  * it can load static JavaScript files without server-side assistence
  * it does not block the JavaScript event loop on the client-side
  * some browsers will provide debug information because it uses "//@sourceURL"
    when constructing module factory functions with "eval".
 
 The disadvantages include:
+
  * it does not make optimal use of the network.  Before the main module can be
    executed, every module must be loaded, which causes a number of round trips
    from the client to the server related to the depth of the dependency
