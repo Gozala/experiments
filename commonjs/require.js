@@ -7,7 +7,8 @@
     var COMMENTS_MATCH = /(\/\*([^*]|[\r\n]|(\*+([^*\/]|[\r\n])))*\*+\/)|(\/\/.*)/g;
     var modules = {};
     var factories = {};
-    var requests = {};
+    var sources = {};
+    var waiting = [];
     var metadata = {};
     var main;
 
@@ -19,46 +20,52 @@
         load(id);
         return modules[id];
     }
-    sandbox.main = function(id) {
-        main = sandbox.main = metadata[id] = metadata[id] || {};
+    function require(id) {
+        return sandbox(id);
+    }
+    require.main = function(id) {
+        main = metadata[id] = metadata[id] || {};
         sandbox(id);
         return modules[id];
     };
     function load(id) {
         var promise = new Promise();
         var path = id + ".js";
-        if (modules[id] || factories[id]) {
-            if (!modules[id]) {
+        if (factories[id] || sources[id]) {
+            if (!factories[id]) {
                 var require = Require(id);
-                var exports = modules[id] = {};
+                var exports = modules[id];
                 var module = metadata[id] = metadata[id] || {};
                 module.id = id;
                 module.path = path;
                 module.toString = function () {
                     return this.id;
                 };
-                eval(factories[id]).call({}, require, exports, module);
+                var factory = factories[id] = eval(sources[id]);
+                factory.call({}, require, exports, module);
             }
             setTimeout(function() {
                 promise.when();
             }, 0);
         } else {
-            factories[id] = true;
+            modules[id] = {};
+            waiting.push(id);
             loader.fetch(path).when = function(source) {
-                var dependcies = depends(factories[id] = source);
-                var l = dependcies.length;
-                var pending = l + 1;
-                while (l--) {
-                    var dependency = loader.resolve(dependcies[l], id);
-                    if (factories[dependency]) return --pending;
-                    load(dependency).when = (function enqueue() {
-                        if (0 == --pending) {
+                var dependency, dependencies = depends(sources[id] = source);
+                while (dependency = dependencies.shift()) {
+                    dependency = loader.resolve(dependency, id);
+                    if (waiting.indexOf(dependency) >= 0 || sources[dependency]) continue;
+                    waiting.push(dependency);
+                    load(dependency).when = (function(dependency) {
+                        waiting.splice(waiting.indexOf(dependency), 1);
+                        if (0 == waiting.length) {
                             load(id);
                             promise.when();
                         }
-                        return enqueue;
-                    })();
+                    });
                 }
+                waiting.splice(waiting.indexOf(id), 1);
+                promise.when();
             };
         }
         return promise;
@@ -111,6 +118,6 @@
         return require;
     }
 
-    exports.require = sandbox;
+    exports.require = require;
 })(this, this)
 
