@@ -7,34 +7,12 @@
     var COMMENTS_MATCH = /(\/\*([^*]|[\r\n]|(\*+([^*\/]|[\r\n])))*\*+\/)|(\/\/.*)/g;
     var modules = {};
     var factories = {};
+    var requests = {};
     var metadata = {};
     var main;
 
-    function Observable() {
-        this.observers = {};
-    };
-    Observable.prototype = {
-        constructor: Observable,
-        observe: function(topic, observer, scope) {
-            var observers = this.observers;
-            observers = observers[topic] = observers[topic] || [];
-            observers.push({
-                observer: observer,
-                scope: scope
-            })
-            return this;
-        },
-        notify: function(topic) {
-            var observers = this.observers[topic];
-            if (observers) {
-                var args = Array.prototype.slice.call(arguments, 1);
-                for (var i = 0, l = observers.length; i < l; i++) {
-                    var observer = observers[i];
-                    observer.observer.apply(observer.scope, args);
-                }
-            }
-        }
-    };
+    function Promise() {}
+    Promise.prototype.when = function() {};
 
     function sandbox(id, baseId) {
         id = loader.resolve(id, baseId);
@@ -47,38 +25,46 @@
         return modules[id];
     };
     function load(id) {
-        var promise = new Observable();
-        if (modules[id]) {
+        var promise = new Promise();
+        var path = id + ".js";
+        if (modules[id] || factories[id]) {
+            if (!modules[id]) {
+                var require = Require(id);
+                var exports = modules[id] = {};
+                var module = metadata[id] = metadata[id] || {};
+                module.id = id;
+                module.path = path;
+                module.toString = function () {
+                    return this.id;
+                };
+                eval(factories[id]).call({}, require, exports, module);
+            }
             setTimeout(function() {
-                promise.notify("load");
+                promise.when();
             }, 0);
         } else {
-            var require = Require(id);
-            var exports = modules[id] = {};
-            var module = metadata[id] = metadata[id] || {};
-            module.id = id;
-            module.path = id + ".js";
-            module.toString = function () {
-                return this.id;
-            };
-            loader.fetch(module.path).observe("receive", function(source) {
-                var factory = factories[id] = eval(source);
-                var dependcies = module.depends = depends(factory);
+            factories[id] = true;
+            loader.fetch(path).when = function(source) {
+                var dependcies = depends(factories[id] = source);
                 var l = dependcies.length;
                 var pending = l + 1;
-                var next = (function next() {
-                    pending --;
-                    if (pending > 0) return next;
-                    factory.call({}, require, exports, module);
-                    promise.notify("load");
-                })();
-                while (l--) load(loader.resolve(dependcies[l], id)).observe("load", next);
-            });
+                while (l--) {
+                    var dependency = loader.resolve(dependcies[l], id);
+                    if (factories[dependency]) return --pending;
+                    load(dependency).when = (function enqueue() {
+                        if (0 == --pending) {
+                            load(id);
+                            promise.when();
+                        }
+                        return enqueue;
+                    })();
+                }
+            };
         }
         return promise;
     }
-    function depends(module) {
-        var source = module.toString().replace(COMMENTS_MATCH, "");
+    function depends(source) {
+        var source = source.replace(COMMENTS_MATCH, "");
         var dependency, dependencies = [];
         while(depenedency = REQUIRE_MATCH.exec(source)) dependencies.push(depenedency[2]);
         return dependencies;
@@ -98,7 +84,7 @@
             return base.join("/");
         },
         fetch: function (path) {
-            var promise = new Observable();
+            var promise = new Promise();
             var xhr = new XMLHttpRequest();
             xhr.open("GET", path, true);
             xhr.onreadystatechange = function() {
@@ -106,7 +92,7 @@
                     if((xhr.status == 200 || xhr.status == 0) && xhr.responseText != "") {
                         var source = "(function(require, exports, module, system, print) { "
                                 + xhr.responseText + "})\n//@ sourceURL=" + path;
-                        promise.notify("receive", source)
+                        promise.when(source);
                     } else {
                         throw new Error("Cant fetch module from: " + path);
                     }
