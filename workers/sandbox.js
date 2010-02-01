@@ -32,6 +32,9 @@
         var sources = this.sources = options.sources;
         var extensions = this.extensions = options.extensions || [".js"];
         var debug = this.debug = options.debug;
+        this.worker.onerror = function(e) {
+            throw error = e;
+        }
         this.worker.postMessage(JSON.stringify({
             sources: sources,
             system: {
