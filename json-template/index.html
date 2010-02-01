@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+        <title>Wisconsin UI</title>
+        <script type="text/javascript" src="lib/bootstrap.js"></script>
+        <!-- <script type="text/javascript" src="application.js"></script> -->
+        <script>
+            require.main("lib/main")
+        </script>
+        <style type="text/css">
+            body {
+                margin: 0;
+                padding: 0;
+            }
+            textarea, pre {
+                font-family: monospace;
+                font-size: 12px;
+                vertical-align: top;
+                display: inline-block;
+                width: 32%;
+                height: 300px;
+                margin: 0;
+                border: none;
+                border-left: 1px dotted black;
+            }
+            iframe {
+                width: 100%;
+                height: 300px;
+                border: none;
+                border-top: 1px dotted black;
+            }
+        </style>
+    </head>
+    <body>
+        <button id="render">Render</button>
+        json-template tester
+        <hr/>
+        <textarea id="template">
+{# This is a comment and will be removed from the output.}
+
+{.section songs}
+  <h2>Songs in '{playlist-name}'</h2>
+
+  <table width="100%">
+  {.repeated section @}
+    <tr>
+      <td><a href="{url-base|htmltag}{url|htmltag}">Play</a>
+      <td><i>{title}</i></td>
+      <td>{artist}</td>
+    </tr>
+  {.end}
+  </table>
+{.or}
+  <p><em>(No page content matches)</em></p>
+{.end}
+        </textarea>
+        <textarea id="data">
+{
+  "url-base": "http://example.com/music/", 
+  "playlist-name": "Epic Playlist", 
+  "songs": [
+    {
+      "url": "1.mp3", 
+      "artist": "Grayceon", 
+      "title": "Sounds Like Thunder"
+    }, 
+    {
+      "url": "2.mp3", 
+      "artist": "Thou", 
+      "title": "Their Hooves Carve Craters in the Earth"
+    }
+  ]
+}
+        </textarea>
+        <pre id="output"></pre>
+        <br/>
+        <iframe id="preview"></iframe>
+    </body>
+</html>
+
