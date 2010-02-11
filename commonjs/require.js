@@ -127,7 +127,7 @@ require.setup = function setup(properties) {
                     if((xhr.status == 200 || xhr.status == 0) && xhr.responseText != "") {
                         var text = xhr.responseText;
                         var source = "(function(require, exports, module, system, print) { "
-                                + text + "})\n//@ sourceURL=" + path;
+                                + text + "\n//*/\n})\n//@ sourceURL=" + path;
                         promise.when(source, text);
                     } else {
                         throw new Error("Cant fetch module from: " + path);
