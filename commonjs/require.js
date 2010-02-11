@@ -13,6 +13,7 @@ require.setup = function setup(properties) {
     var COMMENTS_MATCH = /(\/\*([^*]|[\r\n]|(\*+([^*\/]|[\r\n])))*\*+\/)|((^|\n)[^\'\"\n]*\/\/[^\n]*)/g;
     var global = properties.global || {};
     var prefix = properties.prefix || "";
+    var paths = properties.paths || {};
     var modules = properties.modules || {};
     var factories = properties.factories || {};
     var sources = properties.sources || {};
@@ -40,8 +41,8 @@ require.setup = function setup(properties) {
     function load(id) {
         var promise = new Promise();
         var path = id + ".js";
-        if (factories[id] || sources[id]) {
-            if (!factories[id]) {
+        if (factories[id] || sources[id] || modules[id]) {
+            if (!factories[id] && sources[id]) {
                 var require = Require(id);
                 var exports = modules[id];
                 var module = metadata[id] || (metadata[id] = {});
@@ -69,7 +70,8 @@ require.setup = function setup(properties) {
                 sources[id] = source;
                 while (dependency = dependencies.shift()) {
                     dependency = loader.resolve(dependency, id);
-                    if (waiting.indexOf(dependency) >= 0 || sources[dependency]) continue;
+                    if (waiting.indexOf(dependency) >= 0 || sources[dependency]
+                        || factories[dependency] || modules[dependency]) continue;
                     waiting.push(dependency);
                     load(dependency).when = (function(dependency) {
                         waiting.splice(waiting.indexOf(dependency), 1);
@@ -96,11 +98,19 @@ require.setup = function setup(properties) {
     var loader = {
         resolve: function(id, baseId) {
             if (0 < id.indexOf("://")) return id;
-            if (id.charAt(0) != ".") return prefix + id;
+            var part, parts = id.split("/");
+            var root = parts[0];
+            if (root.charAt(0) != ".") {
+                if (root in paths) {
+                    parts.shift();
+                    return paths[root] + parts.join("/");
+                }
+                return prefix + id;
+            }
             baseId = baseId || prefix;
             var base = baseId.split("/");
             base.pop();
-            var part, parts = id.split("/");
+            
             while (part = parts.shift()) {
                 if (part == ".") continue;
                 if (part == ".." && base.length) base.pop();
