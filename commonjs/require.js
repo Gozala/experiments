@@ -74,7 +74,8 @@ require.setup = function setup(properties) {
     requirer.setup = setup;
     function load(id) {
         var promise = new Promise();
-        var path = id + ".js";
+        var packageId = id.split("/")[0];
+        var path = ((packageId in packages) ? packages[packageId] + id.substr(packageId.length) : id) + ".js";
         var factory = factories[id];
         var source = sources[id];
         var module = modules[id];
@@ -135,13 +136,7 @@ require.setup = function setup(properties) {
             if (0 < id.indexOf("://")) return id;
             var part, parts = id.split("/");
             var root = parts[0];
-            if (root.charAt(0) != ".") {
-                if (root in packages) {
-                    parts.shift();
-                    return packages[root] + parts.join("/");
-                }
-                return prefix + id;
-            }
+            if (root.charAt(0) != ".") return prefix + id;
             baseId = baseId || prefix;
             var base = baseId.split("/");
             base.pop();
